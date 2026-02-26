@@ -1,0 +1,42 @@
+name: Deploy to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: false
+        default: 'main'
+  repository_dispatch:
+    types: [deploy]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      DISPATCH_IMAGE_TAG: ${{ github.event.client_payload.image_tag }}
+      INPUT_IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+    steps:
+      - name: SSH deploy to server
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+
+            DEPLOY_DIR=${DEPLOY_DIR:-/home/${USER}/smartbala-deploy}
+
+            mkdir -p "$DEPLOY_DIR"
+            cd "$DEPLOY_DIR"
+
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+
+            IMAGE_TAG="${DISPATCH_IMAGE_TAG:-${INPUT_IMAGE_TAG:-main}}"
+            export IMAGE_TAG
+
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d
+
